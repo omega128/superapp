@@ -1,5 +1,6 @@
 package com.example.superapp.superapp;
 
+import android.os.Handler;
 import android.support.v4.app.FragmentActivity;
 import android.os.Bundle;
 
@@ -28,11 +29,14 @@ import org.json.JSONObject;
 
 import okhttp3.*;
 import android.util.Log;
+import android.os.Handler;
 
 public class MapsActivity extends FragmentActivity implements OnMapReadyCallback {
 
     private GoogleMap mMap;
+    private Handler updateMapTimer;
 
+    /* Store Cry Records */
     private class Cry {
         private String myTitle;
         private double myLatitude,
@@ -49,49 +53,20 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         public double getLongitude () { return myLongitude; }
 
     }
-
     private Vector<Cry> cryList = new Vector<Cry>();
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_maps);
-        // Obtain the SupportMapFragment and get notified when the map is ready to be used.
-        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
-                .findFragmentById(R.id.map);
-        mapFragment.getMapAsync(this);
-    }
-
-
-    /**
-     * Manipulates the map once available.
-     * This callback is triggered when the map is ready to be used.
-     * This is where we can add markers or lines, add listeners or move the camera. In this case,
-     * we just add a marker near Sydney, Australia.
-     * If Google Play services is not installed on the device, the user will be prompted to install
-     * it inside the SupportMapFragment. This method will only be triggered once the user has
-     * installed Google Play services and returned to the app.
-     */
-    @Override
-    public void onMapReady(GoogleMap googleMap) {
-        mMap = googleMap;
-
-        // attempt to get the user's GPS coordinates and move the camera there if we can.
-        try {
-            LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-            Criteria criteria = new Criteria();
-            Location location = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
-
-            if (location != null) {
-                LatLng playerAt = new LatLng(
-                        (location.getLatitude()),
-                        (location.getLongitude()));
-                mMap.moveCamera(CameraUpdateFactory.newLatLng(playerAt));
-            }
-        } catch (SecurityException e) {
-            Log.d("OHNOES", "Could not locate GPS coordinates.");
+    /* Periodically poll the website and update the map */
+    private Runnable updateMapTimerThread = new Runnable()
+    {
+        public void run()
+        {
+            requestCriesFromServer();
+            updateMap();
+            updateMapTimer.postDelayed(updateMapTimerThread, 2000);
         }
+    };
 
+    private void requestCriesFromServer () {
         OkHttpClient client = new OkHttpClient();
         Request request = new Request.Builder()
                 .url("http://kcchambers.dreamhosters.com/scc/superapp/map.php")
@@ -114,13 +89,11 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
                     JSONArray cries = json.getJSONArray("cries");
 
                     cryList.clear();
-
                     for (int i = 0; i < cries.length(); ++i) {
                         JSONObject cry = cries.getJSONObject(i);
-                        String title = cry.getString("c_title");
-                        Cry newCry = new Cry (cry.getString("c_title"),
-                                              cry.getDouble("c_lat"),
-                                              cry.getDouble("c_lon"));
+                        Cry newCry = new Cry(cry.getString("c_descr"),
+                                cry.getDouble("c_lat"),
+                                cry.getDouble("c_lon"));
                         cryList.add(newCry);
                     }
 
@@ -131,25 +104,61 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
                 }
             }
         });
+    }
 
-        Log.d("OHNOES", "CRY VECTOR NOW SIZE " + cryList.size());
-        for (Cry cry : cryList) {
-            LatLng coords = new LatLng(cry.getLatitude(),
-                    cry.getLongitude());
+    private void updateMap () {
+        if (mMap != null) {
+            mMap.clear();
+            for (Cry cry : cryList) {
+                LatLng coords = new LatLng(cry.getLatitude(),
+                        cry.getLongitude());
 
-            Log.d("OHNOES", "ADDED MARKER: " + cry.getTitle());
-            mMap.addMarker(new MarkerOptions().position(coords).title(cry.getTitle()));
+                Log.d("OHNOES", "ADDED MARKER: " + cry.getTitle());
+                mMap.addMarker(new MarkerOptions().position(coords).title(cry.getTitle()));
+            }
         }
+    }
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_maps);
+        // Obtain the SupportMapFragment and get notified when the map is ready to be used.
+        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
+                .findFragmentById(R.id.map);
+        mapFragment.getMapAsync(this);
+
+        updateMapTimer = new Handler(getApplicationContext().getMainLooper());
+
+        // every so often, poll the web and update the map
+        updateMapTimer.postDelayed(updateMapTimerThread, 1);
+    }
 
 
 
+    /**
+     * Manipulates the map once available.
+     * This callback is triggered when the map is ready to be used.
+     * This is where we can add markers or lines, add listeners or move the camera
+     */
+    @Override
+    public void onMapReady(GoogleMap googleMap) {
+        mMap = googleMap;
 
+        // attempt to get the user's GPS coordinates and move the camera there if we can.
+        try {
+            LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+            Criteria criteria = new Criteria();
+            Location location = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
 
-
-        // Add a marker at the St John's Apartment, for testing.
-        //LatLng stJohns = new LatLng(47.613998, -122.32253);
-        //mMap.addMarker(new MarkerOptions().position(stJohns).title("Marker At St Johns"));
-        Log.d("OHNOES", "ADDED A MARKER.");
-
+            if (location != null) {
+                LatLng playerAt = new LatLng(
+                        (location.getLatitude()),
+                        (location.getLongitude()));
+                mMap.moveCamera(CameraUpdateFactory.newLatLng(playerAt));
+            }
+        } catch (SecurityException e) {
+            Log.d("OHNOES", "Could not locate GPS coordinates.");
+        }
     }
 }
