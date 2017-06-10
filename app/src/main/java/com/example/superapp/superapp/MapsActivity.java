@@ -1,6 +1,9 @@
 package com.example.superapp.superapp;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.os.Handler;
+import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.FragmentActivity;
 import android.os.Bundle;
 
@@ -28,45 +31,79 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import okhttp3.*;
+
 import android.util.Log;
 import android.os.Handler;
 
-public class MapsActivity extends FragmentActivity implements OnMapReadyCallback {
+public class MapsActivity extends FragmentActivity implements OnMapReadyCallback, ActivityCompat.OnRequestPermissionsResultCallback {
 
     private GoogleMap mMap;
     private Handler updateMapTimer;
 
     /* Store Cry Records */
+    private Vector<Cry> cryList = new Vector<Cry>();
     private class Cry {
         private String myTitle;
         private double myLatitude,
-                       myLongitude;
+                myLongitude;
 
-        public Cry (String title, double latitude, double longitude) {
+
+        public Cry(String title, double latitude, double longitude) {
             myTitle = title;
             myLatitude = latitude;
             myLongitude = longitude;
         }
 
-        public String getTitle () { return myTitle; }
-        public double getLatitude () { return myLatitude; }
-        public double getLongitude () { return myLongitude; }
-
+        public String getTitle() { return myTitle; }
+        public double getLatitude() { return myLatitude; }
+        public double getLongitude() { return myLongitude; }
     }
-    private Vector<Cry> cryList = new Vector<Cry>();
+
+
+    /* We need to track the user's GPS coordinates */
+    private boolean haveGPS = false;
+    private String myLocation;
+    private double latitude,
+            longitude;
+    private class MyCurrentLocationListener implements LocationListener {
+        @Override
+        public void onLocationChanged(Location location) {
+            location.getLatitude();
+            location.getLongitude();
+
+            latitude = location.getLatitude();
+            longitude = location.getLongitude();
+
+            myLocation = "Lat: " + latitude + " Long: " + longitude;
+
+            haveGPS = true;
+            Log.d("OHNOES", myLocation);
+        }
+
+        @Override
+        public void onStatusChanged(String s, int i, Bundle bundle) {
+        }
+
+        @Override
+        public void onProviderEnabled(String s) {
+        }
+
+        @Override
+        public void onProviderDisabled(String s) {
+        }
+    }
 
     /* Periodically poll the website and update the map */
-    private Runnable updateMapTimerThread = new Runnable()
-    {
-        public void run()
-        {
+    private Runnable updateMapTimerThread = new Runnable() {
+        public void run() {
             requestCriesFromServer();
             updateMap();
             updateMapTimer.postDelayed(updateMapTimerThread, 2000);
         }
     };
 
-    private void requestCriesFromServer () {
+    /* request new cries from the server, clear the list and repopulate it */
+    private void requestCriesFromServer() {
         OkHttpClient client = new OkHttpClient();
         Request request = new Request.Builder()
                 .url("http://kcchambers.dreamhosters.com/scc/superapp/map.php")
@@ -106,7 +143,7 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         });
     }
 
-    private void updateMap () {
+    private void updateMap() {
         if (mMap != null) {
             mMap.clear();
             for (Cry cry : cryList) {
@@ -119,22 +156,44 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         }
     }
 
+
+    @Override
+    public void onRequestPermissionsResult (int requestCode,
+                                     String[] permissions,
+                                     int[] grantResults)
+
+    {
+        Log.d("OHNOES", "Grant results: " + grantResults[0]);
+    }
+
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_maps);
+
         // Obtain the SupportMapFragment and get notified when the map is ready to be used.
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
 
+        // start polling the server, so we can update the map
         updateMapTimer = new Handler(getApplicationContext().getMainLooper());
-
-        // every so often, poll the web and update the map
         updateMapTimer.postDelayed(updateMapTimerThread, 1);
+
+        // check if the user has given permission to use their GPS coords.
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            Log.d("OHNOES", "USER HAS FORBIDDEN ACCESS TO GPS!");
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 1);
+        }
+        else
+        {
+            //set up a location listener
+            LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+            MyCurrentLocationListener locationListener = new MyCurrentLocationListener();
+            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, (LocationListener) locationListener);
+        }
     }
-
-
 
     /**
      * Manipulates the map once available.
@@ -145,20 +204,21 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     public void onMapReady(GoogleMap googleMap) {
         mMap = googleMap;
 
-        // attempt to get the user's GPS coordinates and move the camera there if we can.
-        try {
-            LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-            Criteria criteria = new Criteria();
-            Location location = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+        /* the user creates a new cry for help by long clicking the map */
+        mMap.setOnMapLongClickListener(new GoogleMap.OnMapLongClickListener() {
 
-            if (location != null) {
-                LatLng playerAt = new LatLng(
-                        (location.getLatitude()),
-                        (location.getLongitude()));
-                mMap.moveCamera(CameraUpdateFactory.newLatLng(playerAt));
+            @Override
+            public void onMapLongClick(LatLng latLng) {
+                if (haveGPS) {
+                    // todo: bring up New Cry dialog
+                }
+                else
+                {
+                    // todo: complain if user has no gps
+
+                }
             }
-        } catch (SecurityException e) {
-            Log.d("OHNOES", "Could not locate GPS coordinates.");
-        }
+        });
+
     }
 }
